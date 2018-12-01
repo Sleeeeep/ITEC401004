@@ -1,0 +1,8 @@
+prefix=/home/jw/catkin_ws/devel
+
+Name: jw
+Description: Description of jw
+Version: 0.0.0
+Cflags: -I/home/jw/catkin_ws/devel/include -I/home/jw/catkin_ws/src/jw/include
+Libs: -L/home/jw/catkin_ws/devel/lib -ljw
+Requires: roscpp std_msgs
