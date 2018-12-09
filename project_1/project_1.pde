@@ -1,6 +1,6 @@
-//import processing.serial.*;
-PrintWriter output;
-//Serial myPort;
+import processing.serial.*;
+
+Serial myPort;
 
 int setupSizeX = 594, setupSizeY = 420;
 int setSizeX = 594, setSizeY = 420; // x = y y = x my mistake sorry
@@ -37,8 +37,7 @@ void setup() {
   fill(255);
   //noStroke();
   img = loadImage("img05.png");
-  output = createWriter("path.txt");
- // myPort = new Serial(this, Serial.list()[1], 9600);
+  // myPort = new Serial(this, Serial.list()[1], 9600);
   //frameRate(60);
   //smooth();
 }
@@ -251,84 +250,31 @@ void savePoint() {
 }
 
 void dataFormat() {
-  int pen, i; // 1: up 2: down
-  float dist = 0, prevAngle = 0, turnAngle = 0;
-  String data;
+  int i;
+  String data = "";
   
-  int count=0;
-  
-  for (i=1; i<=nextPointer; i++)
+  print("START\n");
+  for (i=1; i<nextPointer; i++)
   {
-    if (dataSetX[i] == -1 || dataSetY[i] == -1) // up pen and move to next pos
+    if (dataSetX[i] == -1 && dataSetY[i] == -1) // up pen and move to next pos
     {
-      pen = 1;
-      dist = sqrt(pow(dataSetX[i+1] - dataSetX[i-1], 2) + pow(dataSetY[i+1] - dataSetY[i-1], 2));
-      turnAngle = getAngle(prevAngle, i+1, i-1);
-      prevAngle = toDegree(atan2(dataSetY[i+1]-dataSetY[i-1], dataSetX[i+1]-dataSetX[i-1]));
-    } else
-    {
-      count++;
-      if (dataSetX[i-1] == -1 || dataSetY[i-1] == -1) // just down pen
-      {
-        pen = 2;
-        dist = 0;
-      } else // draw
-      {
-        pen = 2;
-        dist = sqrt(pow(dataSetX[i] - dataSetX[i-1], 2) + pow(dataSetY[i] - dataSetY[i-1], 2));
-        turnAngle = getAngle(prevAngle, i, i-1);
-        prevAngle = toDegree(atan2(dataSetY[i]-dataSetY[i-1], dataSetX[i]-dataSetX[i-1]));
-      }
-    }  
-   // if (abs(turnAngle)>=0.3) // min turnangle = 0.3
-    {
-      if (turnAngle > 0)
-        data = "R,1," + str(turnAngle) + "\n";
-      else
-        data = "L,1," + str(-1*turnAngle) + "\n";
-    //  myPort.write(data);
+      data = "UP\n";
+      print(data);
+      data = dataSetX[i+1] + " " + dataSetY[i+1] + "\n";
       print(data);
     }
-    data = "F,"+ str(pen) + "," + str(dist) + "\n";
-  //  myPort.write(data);
-    
-    print(data);
-  }
-  
-  output.println(count);
-  for(i=1; i<=nextPointer; i++)
-  {
-     if (dataSetX[i] == -1 || dataSetY[i] == -1)
-       continue;
-     output.println(dataSetX[i]+" "+dataSetY[i]);
-  }
-  output.flush();
-  output.close();
-}
-
-float getAngle(float prevAngle, int currPos, int prevPos)
-{
-  float Angle = atan2(dataSetY[currPos]-dataSetY[prevPos], dataSetX[currPos]-dataSetX[prevPos]) - toRadian(prevAngle);
-  Angle = toDegree(Angle);
-  float _Angle = Angle % 360.0;
-
-  if (abs(_Angle) > 180)
-  {
-    if (Angle > 0)
-      Angle = -(360 - _Angle);
     else
-      Angle = 360 + _Angle;
-  } else
-    Angle = _Angle;
-
-  return Angle;
-}
-
-float toRadian(float degree)
-{
-  return (degree * (PI/180));
-}
-float toDegree(float radian)
-{
-  return (radian * (180/PI));
+    {
+      if (dataSetX[i-1] == -1 || dataSetY[i-1] == -1) // just down pen
+      {
+        data = "DOWN\n";
+        print(data);
+      }
+      if(dataSetX[i+1] == -1 && dataSetY[i+1] == -1)
+        continue;
+      data = dataSetX[i+1] + " " + dataSetY[i+1] + "\n";
+      print(data);
+    }
+  }
+  print("END\n");
 }
