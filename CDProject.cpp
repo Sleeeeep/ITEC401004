@@ -6,7 +6,10 @@
 #include<boost/thread/mutex.hpp>
 #include<tf/tf.h>
 #include<sensor_msgs/LaserScan.h>
+#include"wiringPi.h"
+#include<softPwm.h>
 
+#define SERVO 7
 #define toRadian(degree)	((degree) * (M_PI / 180.))
 #define toDegree(radian)	((radian) * (180. / M_PI))
 
@@ -81,7 +84,14 @@ void scanMsgCallback(const sensor_msgs::LaserScan &msg)
 
 	if(obstacle)
 	{
-
+		geometry_msgs::Twist baseCmd;
+    	
+    	baseCmd.linear.y = 0;
+	    baseCmd.angular.z = 0;
+	    baseCmd.linear.x = 0.0;
+    	baseCmd.angular.z = 0.0;
+    	
+    	pub.publish(baseCmd);
 	}
 }
 
@@ -193,7 +203,7 @@ bool doTranslation(tf::Transform &initialTransformation, double dTranslation, do
         baseCmd.linear.x = -dTranslationSpeed;
     else 
         baseCmd.linear.x = dTranslationSpeed;
- 
+
     baseCmd.linear.y = 0;
     baseCmd.angular.z = 0;
 
@@ -232,37 +242,57 @@ bool doTranslation(tf::Transform &initialTransformation, double dTranslation, do
 int main(int ac, char *av[])
 {
     ros::init(ac, av, "CDProject");
-
+	
     ros::NodeHandle nhp, nhs, nh1, nh2;
-    // odom msg
-	ros::Subscriber sub = nhs.subscribe("/odom", 100, &odomMsgCallback);
-	ros::Subscriber subscan = nh2.subscribe("/scan", 10, &scanMsgCallback);
-    pub = nhp.advertise<geometry_msgs::Twist>("/cmd_vel", 100);
+   
+//	ros::Subscriber sub = nhs.subscribe("/odom", 100, &odomMsgCallback);
+//	ros::Subscriber subscan = nh2.subscribe("/scan", 10, &scanMsgCallback);
+//   pub = nhp.advertise<geometry_msgs::Twist>("/cmd_vel", 100);
 
-	FILE *fp = fopen(av[1], "r");
-	if(fp == NULL)
-	{
-		fprintf(stderr, "fopen() error!!!\n");
-		exit(1);
-	}
-
+	FILE *fp;
+	char input[100];
 	int n;
     double prevX, prevY;
     double x, y;
     
-    tf::Transform initialTransformation = getInitialTransformation();
-    // 초기값 설정
-    prevX = initialTransformation.getOrigin().getX();
-    prevY = initialTransformation.getOrigin().getY();
+    if(wiringPiSetup() == -1)
+		return 1;
+		
+	softPwmCreate(SERVO, 0, 200);
+	softPwmWrite(SERVO, 5);	
+//    tf::Transform initialTransformation = getInitialTransformation();
+//    prevX = initialTransformation.getOrigin().getX();
+//    prevY = initialTransformation.getOrigin().getY();
+    while((fp = fopen(av[1], "r")) == NULL);
+    while(1)
+    {
+		fscanf(fp, "%s", input);
+	    printf("%s\n", input);
+	    if(!strcmp(input, "END"))
+	    	break;
+	    else if(!strcmp(input, "UP"))
+		{
+			softPwmWrite(SERVO, 5);
+			ros::Duration(1.0).sleep();  
+		}    
+		else if(!strcmp(input, "DOWN"))
+		{
+			softPwmWrite(SERVO, 15);		
+			ros::Duration(1.0).sleep();      
+		}
+		else if(!strcmp(input, "XY"))    
+		{
+		    fscanf(fp, "%lf %lf", &x, &y);
+			printf("%lf %lf\n", x, y);
+		}
+    }
     
-    fscanf(fp, "%d", &n);
-    fscanf(fp, "%lf %lf", &x, &y);
- 
+ /*
     for(int i=0; i<n; i++)
     {
         printf("--------------------------------------------\n");
         printf("PATH %d : [%lf] [%lf]\n", i+1, x, y);
-        
+       
         double dRotation = toDegree(atan2(y-prevY, x-prevX) - getHeadingAngle(getCurrentTransformation()));
         float _dRatation = fmod(dRotation, 360);
         double dTranslation = sqrt(pow(prevX-x, 2) + pow(prevY-y, 2));
@@ -307,7 +337,8 @@ int main(int ac, char *av[])
         
         ros::Duration(2.0).sleep();      
     }
-    
+   */ 
+   	softPwmWrite(SERVO, 5);	
     fclose(fp);
     return 0;
 }
