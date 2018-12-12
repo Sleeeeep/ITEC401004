@@ -1,5 +1,6 @@
 #include<stdio.h>
 #include<unistd.h>
+#include<math.h>
 #include<ros/ros.h>
 #include<geometry_msgs/Twist.h>
 #include<nav_msgs/Odometry.h>
@@ -10,8 +11,8 @@
 #include<softPwm.h>
 
 #define SERVO 7
-#define toRadian(degree)	((degree) * (M_PI / 180.))
-#define toDegree(radian)	((radian) * (180. / M_PI))
+#define toRadian(degree) ((degree) * (M_PI / 180.))
+#define toDegree(radian) ((radian) * (180. / M_PI))
 
 boost::mutex mutex;
 nav_msgs::Odometry g_odom;
@@ -119,32 +120,13 @@ tf::Transform getCurrentTransformation(void)
     return transformation;
 }
 
-tf::Transform getInitialTransformation(void)
-{
-    tf::Transform transformation;
-
-    ros::Rate loopRate(1000.0);
-
-    while(ros::ok()) {
-        ros::spinOnce();
-
-        transformation = getCurrentTransformation();
-
-        if(transformation.getOrigin().getX() != 0. || transformation.getOrigin().getY() != 0. && transformation.getOrigin().getZ() != 0.) {
-            break;
-        } else {
-            loopRate.sleep();
-        }
-    }
-
-    return transformation;
-}
-
 double getHeadingAngle(tf::Transform temp)
 {
     tf::Quaternion rotationQuat = temp.getRotation();
     double tempvalue = atan2((2 * rotationQuat[2] * rotationQuat[3]) , (1-(2 * (rotationQuat[2] * rotationQuat[2]) ) ));
     
+    if(isnan(tempvalue))
+    	return 0;
     return tempvalue;
 }
 
@@ -171,6 +153,7 @@ bool doRotation(tf::Transform &initialTransformation, double dRotation, double d
 
         double dAngleTurned = getHeadingAngle(relativeTransformation);
         
+        printf("tttt %lf %lf\n", dRotation, dAngleTurned);
         if( fabs(dAngleTurned) > fabs(dRotation) || (abs(pre_dAngleTurned - dRotation) <  abs(dAngleTurned - dRotation)) || (dRotation == 0)) 
     	{
             bDone = true;
@@ -212,6 +195,7 @@ bool doTranslation(tf::Transform &initialTransformation, double dTranslation, do
 
     while(ros::ok() && !bDone) 
     {
+    	printf("trans %lf   %lf\n", dTranslation, baseCmd.linear.x);
         ros::spinOnce();
 
         tf::Transform currentTransformation = getCurrentTransformation();
@@ -243,27 +227,37 @@ int main(int ac, char *av[])
 {
     ros::init(ac, av, "CDProject");
 	
-    ros::NodeHandle nhp, nhs, nh1, nh2;
+    ros::NodeHandle nhp, nhs, nh1;
    
-//	ros::Subscriber sub = nhs.subscribe("/odom", 100, &odomMsgCallback);
-//	ros::Subscriber subscan = nh2.subscribe("/scan", 10, &scanMsgCallback);
-//   pub = nhp.advertise<geometry_msgs::Twist>("/cmd_vel", 100);
-
+	ros::Subscriber sub = nhs.subscribe("/odom", 100, &odomMsgCallback);
+	ros::Subscriber subscan = nh1.subscribe("/scan", 10, &scanMsgCallback);
+	pub = nhp.advertise<geometry_msgs::Twist>("/cmd_vel", 100);
+	
+	geometry_msgs::Twist baseCmd;
+    baseCmd.linear.x = 0.0;
+    baseCmd.linear.y = 0;
+    baseCmd.angular.z = 0;
+    
+    pub.publish(baseCmd);
+    
 	FILE *fp;
 	char input[100];
-	int n;
     double prevX, prevY;
     double x, y;
-    
+    double prevAngle = 0, angleResult;
+	double dRotation = 0, _dRatation = 0, dTranslation = 0;
+
+    while((fp = fopen(av[1], "r")) == NULL);
+
     if(wiringPiSetup() == -1)
 		return 1;
-		
+
 	softPwmCreate(SERVO, 0, 200);
-	softPwmWrite(SERVO, 5);	
-//    tf::Transform initialTransformation = getInitialTransformation();
-//    prevX = initialTransformation.getOrigin().getX();
-//    prevY = initialTransformation.getOrigin().getY();
-    while((fp = fopen(av[1], "r")) == NULL);
+    
+    tf::Transform initialTransformation = getCurrentTransformation();
+    prevX = initialTransformation.getOrigin().getX()-1;
+    prevY = initialTransformation.getOrigin().getY()-1;
+
     while(1)
     {
 		fscanf(fp, "%s", input);
@@ -283,62 +277,46 @@ int main(int ac, char *av[])
 		else if(!strcmp(input, "XY"))    
 		{
 		    fscanf(fp, "%lf %lf", &x, &y);
-			printf("%lf %lf\n", x, y);
+	    	printf("prev : %lf %lf\n", prevX, prevY);
+			printf("next : %lf %lf\n", x, y);
+			angleResult = toDegree(atan2(y-prevY, x-prevX));
+			
+			dRotation = angleResult - prevAngle;
+    	    _dRatation = fmod(dRotation, 360.0);
+    	    
+    	    dTranslation = sqrt(pow(prevX-x, 2) + pow(prevY-y, 2));
+        	printf("asd %lf %lf\n", angleResult, prevAngle);
+    	    if(fabs(_dRatation) > 180)
+    	    {
+		        if(dRotation > 0) 
+		            dRotation = -(360-_dRatation);
+    	        else 
+    	            dRotation = (360+_dRatation); 
+    	    }
+    	    else
+    	        dRotation = _dRatation;
+
+    	    doRotation(initialTransformation, toRadian(dRotation), 0.35);
+    	    ros::Duration(2.0).sleep();
+        	
+    	    doTranslation(initialTransformation, dTranslation, 0.15);
+    	    ros::Duration(2.0).sleep();
+    	
+    	    initialTransformation = getCurrentTransformation();
+		    prevX = initialTransformation.getOrigin().getX();
+		    prevY = initialTransformation.getOrigin().getY();
+		    prevAngle = angleResult;
 		}
     }
-    
- /*
-    for(int i=0; i<n; i++)
-    {
-        printf("--------------------------------------------\n");
-        printf("PATH %d : [%lf] [%lf]\n", i+1, x, y);
-       
-        double dRotation = toDegree(atan2(y-prevY, x-prevX) - getHeadingAngle(getCurrentTransformation()));
-        float _dRatation = fmod(dRotation, 360);
-        double dTranslation = sqrt(pow(prevX-x, 2) + pow(prevY-y, 2));
-        
-        if(fabs(_dRatation) > 180)
-        {
-	        if(dRotation > 0) 
-	            dRotation = -(360-_dRatation);
-            else 
-                dRotation = (360+_dRatation); 
-        }
-        else
-            dRotation = _dRatation;
-       
-        doRotation(initialTransformation, toRadian(dRotation), 0.75);
-    
-        if(fabs(getHeadingAngle(getCurrentTransformation()) - atan2(y-prevY, x-prevX)) > 0.25)
-        {
-            printf("angle modify...\n");
-            initialTransformation = getCurrentTransformation();
-            i--;
-            continue;
-        }
-            
-        ros::Duration(2.0).sleep(); 
-        
-        doTranslation(initialTransformation, dTranslation, 0.25);
-        
-        initialTransformation = getCurrentTransformation();
-        prevX = initialTransformation.getOrigin().getX();
-        prevY = initialTransformation.getOrigin().getY();
 
-        if(fabs(initialTransformation.getOrigin().getX()-x) < 0.1 && fabs(initialTransformation.getOrigin().getY()-y) < 0.1)
-            fscanf(fp, "%lf %lf", &x, &y);
-        else
-        {
-            printf("position modify...\n");
-            i--;
-        }
-        
-        printf("SUCESS! <%lf> <%lf>\n", prevX, prevY);
-        
-        ros::Duration(2.0).sleep();      
-    }
-   */ 
+    baseCmd.linear.x = 0.0;
+    baseCmd.linear.y = 0;
+    baseCmd.angular.z = 0;
+    
+    pub.publish(baseCmd);
+	    
    	softPwmWrite(SERVO, 5);	
     fclose(fp);
+ 
     return 0;
 }
